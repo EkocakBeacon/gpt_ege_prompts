@@ -133,11 +133,28 @@ def calculate_zvr_gt(
         variance = abs(total - invoice_amount) / total
         pass_2pct = variance <= 0.02
 
-    breakdown = (
-        f"GT={gt}, type={mapped_type}, service={service_type}, base_tariff={base_tariff}, "
-        f"base={base:.2f}, freq%={freq_disc*100:.1f}, ESI%={esi_disc*100:.1f}, special_rate={special_rate}, "
-        f"ext_fee={ext_fee:.2f}, total={total:.2f}"
+    breakdown_lines = [
+        "Antwerp Harbour Dues – ZVR_GT",
+        f"1) Base = GT {gt} × tariff {base_tariff} = {base:.2f} EUR",
+        f"2) Frequency discount = {base:.2f} × {freq_disc*100:.1f}% = {base*freq_disc:.2f} EUR",
+        f"   After frequency discount = {after_freq:.2f} EUR",
+        f"3) ESI discount = {after_freq:.2f} × {esi_disc*100:.1f}% = {after_freq*esi_disc:.2f} EUR",
+        f"   After ESI discount = {after_esi:.2f} EUR",
+    ]
+    if special_rate:
+        breakdown_lines.append(
+            f"4) Special rate applied: GT {gt} × 0.2145 = {after_esi:.2f} EUR"
+        )
+        step_idx = 5
+    else:
+        step_idx = 4
+    breakdown_lines.append(
+        f"{step_idx}) Extended stay fee = {ext_fee:.2f} EUR"
     )
+    breakdown_lines.append(
+        f"{step_idx+1}) Total = {after_esi:.2f} + {ext_fee:.2f} = {total:.2f} EUR"
+    )
+    breakdown = "\n".join(breakdown_lines)
 
     summary = {
         "product_type": "ZVR_GT",
@@ -189,9 +206,12 @@ def calculate_aanlegrecht_tons(
         variance = abs(total - invoice_amount) / total
         pass_2pct = variance <= 0.02
 
-    breakdown = (
-        f"commodity={commodity_group}, tons_used={tons_used}, rate={unit_rate_eur_per_ton}, total={total:.2f}"
-    )
+    breakdown_lines = [
+        "Antwerp Harbour Dues – Aanlegrecht Tons",
+        f"1) Tons used = loaded {loaded_tons} + discharged {discharged_tons} = {tons_used}",
+        f"2) Total = {tons_used} × rate {unit_rate_eur_per_ton} = {total:.2f} EUR",
+    ]
+    breakdown = "\n".join(breakdown_lines)
 
     summary = {
         "product_type": "Aanlegrecht_Tons",

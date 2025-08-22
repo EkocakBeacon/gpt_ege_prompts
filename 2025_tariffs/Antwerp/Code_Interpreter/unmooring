@@ -92,10 +92,17 @@ def calculate_unmooring(
         variance = abs(total - billed_amount_eur) / total
         pass_2pct = variance <= 0.02
 
-    breakdown = (
-        f"Base={base:.2f}, TimeSuppl={time_suppl:.2f}, LocSuppl={loc_suppl:.2f}, "
-        f"DelaySuppl={delay_suppl:.2f}, Reductions={reductions:.2f}, CancelFee={cancel_fee:.2f}, Total={total:.2f}"
-    )
+    breakdown_lines = [
+        "Antwerp Unmooring Fee Calculation",
+        f"1) Base tariff = {base:.2f} EUR",
+        f"2) Time supplement = {time_suppl:.2f} EUR",
+        f"3) Location supplement = {loc_suppl:.2f} EUR",
+        f"4) Delay supplement = {delay_suppl:.2f} EUR",
+        f"5) Reductions = {reductions:.2f} EUR",
+        f"6) Cancellation fee = {cancel_fee:.2f} EUR",
+        f"7) Total = {base:.2f} + {time_suppl:.2f} + {loc_suppl:.2f} + {delay_suppl:.2f} + {cancel_fee:.2f} - {reductions:.2f} = {total:.2f} EUR",
+    ]
+    breakdown = "\n".join(breakdown_lines)
 
     summary = {
         "inputs": {
