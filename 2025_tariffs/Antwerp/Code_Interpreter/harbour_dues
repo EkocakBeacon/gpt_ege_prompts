@@ -1,0 +1,291 @@
+Act as a code interpreter and execute the following code. Explain any discrepancy with the invoice amount.
+"""
+Antwerp Harbour Dues Calculator
+-------------------------------
+
+Two products are supported:
+  1) ZVR_GT – GT-based harbour dues
+  2) Aanlegrecht_Tons – cargo based dues on loaded/discharged tonnage
+
+The code below follows the rules from the prompt and validates ±2% against the
+invoice amount if provided.
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import math
+from typing import Dict, Tuple
+
+# ---------------------------------------------------------------------------
+# Common helpers
+# ---------------------------------------------------------------------------
+
+TYPE_MAP = {
+    "tanker": "tanker",
+    "bulkcarrier": "bulk",
+    "container": "containership",
+    "roro": "roro",
+    "reefer": "reefer",
+}
+
+LINER_TARIFFS = {
+    "containership": {"deepsea": 0.3275, "shortsea": 0.2629},
+    "roro": {"deepsea": 0.2237, "shortsea": 0.2237},
+    "tanker": {"deepsea": 0.4752, "shortsea": 0.4752},
+    "reefer": {"deepsea": 0.3621, "shortsea": 0.3621},
+    "bulk": {"deepsea": 0.3621, "shortsea": 0.3621},
+    "other": {"deepsea": 0.5322, "shortsea": 0.5322},
+}
+
+NON_LINER_TARIFFS = {
+    "containership": 0.8072,
+    "roro": 0.6243,
+    "tanker": 0.9337,
+    "reefer": 0.7623,
+    "bulk": 0.7623,
+    "other": 0.9337,
+}
+
+
+def _map_type(raw: str) -> str:
+    return TYPE_MAP.get(raw.lower(), "other")
+
+
+def _service_type(is_shortsea: bool, is_liner: bool) -> str:
+    if is_shortsea:
+        return "shortsea"
+    if is_liner:
+        return "deepsea"
+    return "non-liner"
+
+
+def _frequency_discount(service_type: str, voyage_no: int | None) -> float:
+    if voyage_no is None:
+        return 0.0
+    if service_type == "deepsea":
+        if 53 <= voyage_no <= 150:
+            return 0.10
+        if 151 <= voyage_no <= 200:
+            return 0.20
+        if voyage_no >= 201:
+            return 0.30
+    if service_type == "shortsea":
+        if 27 <= voyage_no <= 52:
+            return 0.25
+        if voyage_no >= 53:
+            return 0.50
+    return 0.0
+
+
+def _esi_discount(score: float | None, built_year: int | None) -> float:
+    if score is None:
+        return 0.0
+    if 70.1 <= score <= 100:
+        return 0.15
+    if 50.1 <= score <= 70.09:
+        return 0.10
+    if 31.0 <= score <= 50.09 and (built_year is None or built_year <= 2010):
+        return 0.04
+    return 0.0
+
+
+def calculate_zvr_gt(
+    *,
+    vessel_type_raw: str,
+    gt: float,
+    voyage_number: int | None,
+    is_shortsea: bool,
+    is_liner: bool,
+    esi_score: float | None,
+    vessel_built_year: int | None,
+    special_rate: bool,
+    days_in_port: int,
+    invoice_amount: float | None,
+) -> Tuple[str, Dict]:
+    mapped_type = _map_type(vessel_type_raw)
+    service_type = _service_type(is_shortsea, is_liner)
+
+    if service_type == "non-liner":
+        base_tariff = NON_LINER_TARIFFS[mapped_type]
+    else:
+        base_tariff = LINER_TARIFFS[mapped_type][service_type]
+
+    base = gt * base_tariff
+    freq_disc = _frequency_discount(service_type, voyage_number)
+    after_freq = base * (1 - freq_disc)
+    esi_disc = _esi_discount(esi_score, vessel_built_year)
+    after_esi = after_freq * (1 - esi_disc)
+
+    if special_rate:
+        after_esi = gt * 0.2145
+
+    ext_fee = 0.0
+    if days_in_port > 20:
+        periods = math.floor((days_in_port - 20) / 20) + 1
+        ext_fee = periods * gt * NON_LINER_TARIFFS[mapped_type]
+
+    total = round(after_esi + ext_fee, 2)
+
+    variance = None
+    pass_2pct = None
+    if invoice_amount is not None:
+        variance = abs(total - invoice_amount) / total
+        pass_2pct = variance <= 0.02
+
+    breakdown_lines = [
+        "Antwerp Harbour Dues – ZVR_GT",
+        f"1) Base = GT {gt} × tariff {base_tariff} = {base:.2f} EUR",
+        f"2) Frequency discount = {base:.2f} × {freq_disc*100:.1f}% = {base*freq_disc:.2f} EUR",
+        f"   After frequency discount = {after_freq:.2f} EUR",
+        f"3) ESI discount = {after_freq:.2f} × {esi_disc*100:.1f}% = {after_freq*esi_disc:.2f} EUR",
+        f"   After ESI discount = {after_esi:.2f} EUR",
+    ]
+    if special_rate:
+        breakdown_lines.append(
+            f"4) Special rate applied: GT {gt} × 0.2145 = {after_esi:.2f} EUR"
+        )
+        step_idx = 5
+    else:
+        step_idx = 4
+    breakdown_lines.append(
+        f"{step_idx}) Extended stay fee = {ext_fee:.2f} EUR"
+    )
+    breakdown_lines.append(
+        f"{step_idx+1}) Total = {after_esi:.2f} + {ext_fee:.2f} = {total:.2f} EUR"
+    )
+    breakdown = "\n".join(breakdown_lines)
+
+    summary = {
+        "product_type": "ZVR_GT",
+        "inputs": {
+            "vessel_type_raw": vessel_type_raw,
+            "mapped_type": mapped_type,
+            "service_type": service_type,
+            "gt": gt,
+            "voyage_number": voyage_number,
+            "esi_score": esi_score,
+            "vessel_built_year": vessel_built_year,
+            "special_rate": special_rate,
+            "days_in_port": days_in_port,
+            "invoice_amount": invoice_amount,
+        },
+        "computed": {
+            "base_tariff": base_tariff,
+            "base_eur": round(base, 2),
+            "frequency_discount_pct": freq_disc * 100,
+            "esi_discount_pct": esi_disc * 100,
+            "after_discounts_eur": round(after_esi, 2),
+            "extended_stay_fee_eur": round(ext_fee, 2),
+            "total_eur": total,
+        },
+        "validation": {
+            "variance_pct": variance,
+            "pass_within_2pct": pass_2pct,
+        },
+    }
+
+    return breakdown, summary
+
+
+def calculate_aanlegrecht_tons(
+    *,
+    loaded_tons: float,
+    discharged_tons: float,
+    unit_rate_eur_per_ton: float,
+    invoice_amount: float | None,
+    commodity_group: str = "",
+) -> Tuple[str, Dict]:
+    tons_used = loaded_tons + discharged_tons
+    amount = tons_used * unit_rate_eur_per_ton
+    total = round(amount, 2)
+
+    variance = None
+    pass_2pct = None
+    if invoice_amount is not None:
+        variance = abs(total - invoice_amount) / total
+        pass_2pct = variance <= 0.02
+
+    breakdown_lines = [
+        "Antwerp Harbour Dues – Aanlegrecht Tons",
+        f"1) Tons used = loaded {loaded_tons} + discharged {discharged_tons} = {tons_used}",
+        f"2) Total = {tons_used} × rate {unit_rate_eur_per_ton} = {total:.2f} EUR",
+    ]
+    breakdown = "\n".join(breakdown_lines)
+
+    summary = {
+        "product_type": "Aanlegrecht_Tons",
+        "inputs": {
+            "loaded_tons": loaded_tons,
+            "discharged_tons": discharged_tons,
+            "commodity_group": commodity_group,
+            "unit_rate_eur_per_ton": unit_rate_eur_per_ton,
+            "invoice_amount": invoice_amount,
+        },
+        "computed": {
+            "tons_used": tons_used,
+            "amount_eur": total,
+        },
+        "validation": {
+            "variance_pct": variance,
+            "pass_within_2pct": pass_2pct,
+        },
+    }
+
+    return breakdown, summary
+
+
+def _cli() -> None:
+    p = argparse.ArgumentParser(description="Antwerp harbour dues calculator")
+    sub = p.add_subparsers(dest="product")
+
+    p_zvr = sub.add_parser("ZVR_GT")
+    p_zvr.add_argument("--vessel-type-raw", required=True)
+    p_zvr.add_argument("--gt", type=float, required=True)
+    p_zvr.add_argument("--voyage-number", type=int)
+    p_zvr.add_argument("--is-shortsea", action="store_true")
+    p_zvr.add_argument("--is-liner", action="store_true")
+    p_zvr.add_argument("--esi-score", type=float)
+    p_zvr.add_argument("--vessel-built-year", type=int)
+    p_zvr.add_argument("--special-rate", action="store_true")
+    p_zvr.add_argument("--days-in-port", type=int, default=1)
+    p_zvr.add_argument("--invoice-amount", type=float)
+
+    p_cargo = sub.add_parser("Aanlegrecht_Tons")
+    p_cargo.add_argument("--loaded-tons", type=float, default=0.0)
+    p_cargo.add_argument("--discharged-tons", type=float, default=0.0)
+    p_cargo.add_argument("--unit-rate", type=float, required=True)
+    p_cargo.add_argument("--invoice-amount", type=float)
+    p_cargo.add_argument("--commodity-group", type=str, default="")
+
+    args = p.parse_args()
+
+    if args.product == "ZVR_GT":
+        breakdown, summary = calculate_zvr_gt(
+            vessel_type_raw=args.vessel_type_raw,
+            gt=args.gt,
+            voyage_number=args.voyage_number,
+            is_shortsea=args.is_shortsea,
+            is_liner=args.is_liner,
+            esi_score=args.esi_score,
+            vessel_built_year=args.vessel_built_year,
+            special_rate=args.special_rate,
+            days_in_port=args.days_in_port,
+            invoice_amount=args.invoice_amount,
+        )
+    else:
+        breakdown, summary = calculate_aanlegrecht_tons(
+            loaded_tons=args.loaded_tons,
+            discharged_tons=args.discharged_tons,
+            unit_rate_eur_per_ton=args.unit_rate,
+            invoice_amount=args.invoice_amount,
+            commodity_group=args.commodity_group,
+        )
+
+    print(breakdown)
+    print("\nJSON Summary:\n" + json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    _cli()
+

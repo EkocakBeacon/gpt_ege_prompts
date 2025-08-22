@@ -1,0 +1,144 @@
+Act as a code interpreter and execute the following code. If there is a discrepancy, explain it.
+"""
+Compulsory Waste Fee - Port of Antwerp
+--------------------------------------
+
+Constants for the fixed fee and rate per GT are expected to be provided via
+injected variables. Only if a constant is missing do we attempt to parse it
+from the invoice text.
+
+Inputs:
+  gt_size               (float)  # gross tonnage
+  fixed_fee             (float)  # from injection or invoice
+  rate_per_gt           (float)  # from injection or invoice
+  is_iso_certified      (bool)
+  is_short_movement     (bool)
+  invoice_amount_eur    (float)
+  invoice_text          (str) optional
+
+Outputs:
+  breakdown text and JSON summary with ±2% validation against invoice_amount_eur.
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import re
+
+SHORT_VOYAGE_DISCOUNT_RATE = 0.05
+
+
+def _parse_invoice_constants(text: str) -> dict:
+    out: dict = {}
+    if not text:
+        return out
+    m_fixed = re.search(r"fixed fee\D*([0-9][\d.,]*)", text, re.IGNORECASE)
+    if m_fixed:
+        out["fixed_fee"] = float(m_fixed.group(1).replace(",", "."))
+    m_rate = re.search(r"rate\D*([0-9][\d.,]*)\s*eur/?gt", text, re.IGNORECASE)
+    if m_rate:
+        out["rate_per_gt"] = float(m_rate.group(1).replace(",", "."))
+    return out
+
+
+def calculate_waste_fee(
+    *,
+    gt_size: float,
+    fixed_fee: float | None,
+    rate_per_gt: float | None,
+    is_iso_certified: bool = False,
+    is_short_movement: bool = False,
+    invoice_amount: float | None = None,
+    invoice_text: str | None = None,
+) -> tuple[str, dict]:
+    parsed = _parse_invoice_constants(invoice_text or "")
+    fixed_fee = fixed_fee if fixed_fee is not None else parsed.get("fixed_fee")
+    rate_per_gt = rate_per_gt if rate_per_gt is not None else parsed.get("rate_per_gt")
+
+    warnings = []
+    if fixed_fee is None:
+        warnings.append("fixed_fee not provided")
+        fixed_fee = 0.0
+    if rate_per_gt is None:
+        warnings.append("rate_per_gt not provided")
+        rate_per_gt = 0.0
+    variable_fee = gt_size * rate_per_gt
+    initial_fee = fixed_fee + variable_fee
+
+    iso_discount = initial_fee * 0.10 if is_iso_certified else 0.0
+    short_discount = (
+        initial_fee * SHORT_VOYAGE_DISCOUNT_RATE if is_short_movement else 0.0
+    )
+
+    total_fee = initial_fee - iso_discount - short_discount
+
+    breakdown_lines = [
+        "Compulsory Waste Fee Calculation - Port of Antwerp",
+        f"1) Variable fee = GT {gt_size} × {rate_per_gt:.4f} = {variable_fee:.2f} EUR",
+        f"2) Initial fee = fixed {fixed_fee:.2f} + variable {variable_fee:.2f} = {initial_fee:.2f} EUR",
+        f"3) ISO discount = {initial_fee:.2f} × 10% = {iso_discount:.2f} EUR",
+        f"4) Short voyage discount = {initial_fee:.2f} × {SHORT_VOYAGE_DISCOUNT_RATE*100:.0f}% = {short_discount:.2f} EUR",
+        f"5) Total waste fee = {initial_fee:.2f} - {iso_discount:.2f} - {short_discount:.2f} = {total_fee:.2f} EUR",
+    ]
+
+    variance = None
+    pass_2pct = None
+    if invoice_amount is not None:
+        variance = abs(total_fee - invoice_amount) / total_fee
+        pass_2pct = variance <= 0.02
+
+    summary = {
+        "inputs": {
+            "gt_size": gt_size,
+            "is_iso_certified": is_iso_certified,
+            "is_short_movement": is_short_movement,
+            "fixed_waste_fee_eur": fixed_fee,
+            "waste_tariff_per_gt_eur": rate_per_gt,
+            "short_voyage_discount_rate": SHORT_VOYAGE_DISCOUNT_RATE,
+            "invoice_amount": invoice_amount,
+        },
+        "calculation": {
+            "variable_fee_eur": round(variable_fee, 2),
+            "initial_fee_eur": round(initial_fee, 2),
+            "iso_discount_eur": round(iso_discount, 2),
+            "short_voyage_discount_eur": round(short_discount, 2),
+            "total_fee_eur": round(total_fee, 2),
+        },
+        "validation": {
+            "variance_pct": variance,
+            "pass_within_2pct": pass_2pct,
+        },
+        "warnings": warnings,
+    }
+
+    return "\n".join(breakdown_lines), summary
+
+
+def _cli() -> None:
+    p = argparse.ArgumentParser(description="Antwerp compulsory waste fee calculator.")
+    p.add_argument("--gt-size", type=float, required=True)
+    p.add_argument("--fixed-fee", type=float)
+    p.add_argument("--rate-per-gt", type=float)
+    p.add_argument("--iso", action="store_true", help="ISO 14001 certified")
+    p.add_argument("--short", action="store_true", help="Short voyage discount")
+    p.add_argument("--invoice-amount", type=float)
+    p.add_argument("--invoice-text", type=str)
+    args = p.parse_args()
+
+    breakdown, summary = calculate_waste_fee(
+        gt_size=args.gt_size,
+        fixed_fee=args.fixed_fee,
+        rate_per_gt=args.rate_per_gt,
+        is_iso_certified=args.iso,
+        is_short_movement=args.short,
+        invoice_amount=args.invoice_amount,
+        invoice_text=args.invoice_text,
+    )
+
+    print(breakdown)
+    print("\nJSON Summary:\n" + json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    _cli()
+
