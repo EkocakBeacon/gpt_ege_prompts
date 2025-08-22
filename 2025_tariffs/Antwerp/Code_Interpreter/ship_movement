@@ -1,0 +1,176 @@
+Act as a code interpreter and execute the following code. If there is a discrepancy between the answer, provide why the discrepancy occurs.
+"""
+Antwerp Ship Movement (VBS) Tariff Lookup
+-----------------------------------------
+
+Given a vessel LOA (in meters), return the Antwerp ship movement tariff (EUR).
+This tariff is typically shown on the pilotage invoice as a separate line called **VBS**.
+
+Rules encoded (per provided table):
+- LOA 41–101  -> €118 flat
+- LOA 102–249 -> starts at €126 at LOA=102 and increases by +€8 per LOA step
+- LOA 250–1000 -> €1318 flat (note: LOA=250 is €1318, i.e., +€16 from 249)
+
+Inputs:
+- loa: int or float (meters)
+- rounding: one of {"ceil","floor","nearest"}; if LOA is not an integer, the lookup
+            uses the rounded integer LOA (default: "ceil").
+
+Outputs:
+- dict with fields:
+    {
+      "port": "Antwerp",
+      "calculation_type": "Ship Movement (VBS)",
+      "input": {"loa_provided": <float>, "loa_used": <int>, "rounding": <str>},
+      "tariff_eur": <int>,
+      "breakdown": "<human friendly text>"
+    }
+
+CLI:
+  python antwerp_vbs.py --loa 167.4 --rounding ceil
+  python antwerp_vbs.py --dump-table tariffs.csv
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import math
+from typing import Dict, Literal, Tuple
+
+PortName = Literal["Antwerp"]
+CalcType = Literal["Ship Movement (VBS)"]
+Rounding = Literal["ceil", "floor", "nearest"]
+
+MIN_LOA = 41
+MAX_LOA = 1000
+
+def build_loA_antwerp_tariffs() -> Dict[int, int]:
+    """
+    Build full LOA -> tariff table for Antwerp (integers from 41 to 1000 inclusive).
+    Implemented compactly to match the exact provided table.
+    """
+    table: Dict[int, int] = {}
+
+    # 41–101 => 118
+    for loa in range(41, 102):
+        table[loa] = 118
+
+    # 102–249 => start at 126 at LOA=102, +8 per LOA step
+    # (i.e., tariff = 126 + 8 * (loa - 102)), verified up to 249 -> 1302
+    for loa in range(102, 250):
+        table[loa] = 126 + 8 * (loa - 102)
+
+    # LOA=250 is explicitly €1318 (note the +16 jump from 249)
+    table[250] = 1318
+
+    # 251–1000 => 1318 flat
+    for loa in range(251, 1001):
+        table[loa] = 1318
+
+    return table
+
+LOA_ANTWERP_TARIFFS = build_loA_antwerp_tariffs()
+
+def _round_loa(loa: float, rounding: Rounding) -> int:
+    if rounding == "ceil":
+        return int(math.ceil(loa))
+    if rounding == "floor":
+        return int(math.floor(loa))
+    # nearest: .5 rounds away from zero via round() in Py3 (bankers on .5 to even),
+    # but LOA normally isn't exactly .5; acceptable here.
+    return int(round(loa))
+
+def get_antwerp_vbs_tariff(loa: float | int, rounding: Rounding = "ceil") -> Dict[str, object]:
+    """
+    Compute the Antwerp Ship Movement (VBS) tariff for the given LOA.
+    See module docstring for details.
+    """
+    loa_provided = float(loa)
+    loa_used = int(loa_provided) if float(loa_provided).is_integer() else _round_loa(loa_provided, rounding)
+
+    if loa_used < MIN_LOA or loa_used > MAX_LOA:
+        raise ValueError(
+            f"LOA {loa_provided} (rounded to {loa_used}) is out of supported bounds "
+            f"[{MIN_LOA}, {MAX_LOA}]."
+        )
+
+    tariff = LOA_ANTWERP_TARIFFS[loa_used]
+
+    # Build a human-friendly breakdown
+    if 41 <= loa_used <= 101:
+        rule = "LOA 41–101 → flat €118"
+    elif 102 <= loa_used <= 249:
+        base = 126
+        step = 8
+        inc = step * (loa_used - 102)
+        rule = f"LOA 102–249 → €{base} + €{step}×(LOA-102) = €{base} + €{inc} = €{base+inc}"
+    elif loa_used == 250:
+        rule = "LOA 250 → €1318 (note: +€16 from LOA 249)"
+    else:
+        rule = "LOA 251–1000 → flat €1318"
+
+    breakdown = (
+        f"Antwerp Ship Movement (VBS) tariff lookup\n"
+        f"- LOA provided: {loa_provided}\n"
+        f"- LOA used for table: {loa_used} (rounding='{rounding}')\n"
+        f"- Rule applied: {rule}\n"
+        f"- Tariff (EUR): {tariff}\n"
+        f"- Note: On pilotage invoices this appears as a separate line named 'VBS'."
+    )
+
+    return {
+        "port": "Antwerp",
+        "calculation_type": "Ship Movement (VBS)",
+        "input": {
+            "loa_provided": loa_provided,
+            "loa_used": loa_used,
+            "rounding": rounding,
+        },
+        "tariff_eur": tariff,
+        "breakdown": breakdown,
+    }
+
+def dump_full_table_csv(path: str) -> Tuple[str, int]:
+    """
+    Write the full tariff table (LOA,Tariff) to CSV.
+    Returns (path, row_count).
+    """
+    rows = [("LOA", "Tariff")]
+    for loa in range(MIN_LOA, MAX_LOA + 1):
+        rows.append((str(loa), str(LOA_ANTWERP_TARIFFS[loa])))
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join([",".join(r) for r in rows]))
+    return path, len(rows) - 1
+
+def _cli():
+    parser = argparse.ArgumentParser(description="Antwerp Ship Movement (VBS) tariff lookup.")
+    parser.add_argument("--loa", type=float, help="Vessel LOA in meters (float or int).")
+    parser.add_argument(
+        "--rounding",
+        type=str,
+        default="ceil",
+        choices=["ceil", "floor", "nearest"],
+        help="Rounding mode if LOA is not an integer (default: ceil)."
+    )
+    parser.add_argument(
+        "--dump-table",
+        type=str,
+        default="",
+        help="If provided, writes the full LOA->tariff table to this CSV path and exits."
+    )
+    args = parser.parse_args()
+
+    if args.dump_table:
+        path, n = dump_full_table_csv(args.dump_table)
+        print(json.dumps({"status": "ok", "csv_path": path, "rows_written": n}, indent=2))
+        return
+
+    if args.loa is None:
+        parser.error("--loa is required unless --dump-table is used.")
+
+    result = get_antwerp_vbs_tariff(args.loa, args.rounding)
+    print(json.dumps(result, indent=2))
+
+if __name__ == "__main__":
+    _cli()
