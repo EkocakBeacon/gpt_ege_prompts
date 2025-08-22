@@ -1,4 +1,48 @@
-Act like a code interpreter and execute the following code with the variables injected, and then explain the result, and any discrepancy. 
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
+
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
+
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
+
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
+
+Act as a code interpreter and execute the following code. Use the injected values above and only read the invoice if a value is missing (capture it in brackets with units). Show the raw code output first, then provide a human-readable explanation and any discrepancy.
 """
 Antwerp Pilotage-In (Block-Size) Fee Calculator
 ===============================================
@@ -38,10 +82,9 @@ Inputs (use or derive)
 
 Draught unit handling
 ---------------------
-Block size uses draught in decimeters (dm):
-  block_size = length_m * breadth_m * draught_dm
-We default to interpreting max_summer_draught_m in meters and convert to dm by *10.
-If invoice text clearly shows draught in 'dm' (e.g., "draught 125 dm"), we switch to dm and note the assumption.
+Block size uses draught in meters:
+  block_size = length_m * breadth_m * draught_m
+If invoice text shows draught in 'dm', divide by 10 to convert to meters.
 
 Allowed route keys (must match exactly)
 ---------------------------------------
@@ -260,7 +303,7 @@ def compute_pilotage_in(
     length_m = pick("length_m", length_m)
     breadth_m = pick("breadth_m", breadth_m)
 
-    # Draught handling (prefer provided meters; if invoice has explicit dm, we will switch and note)
+    # Draught handling (always use meters; invoice may state dm)
     draught_m = pick("max_summer_draught_m", max_summer_draught_m)
     draught_dm_explicit = parsed.get("draught_dm_explicit")
 
@@ -282,7 +325,8 @@ def compute_pilotage_in(
     missing_core = []
     if length_m is None: missing_core.append("length_m")
     if breadth_m is None: missing_core.append("breadth_m")
-    if draught_m is None and draught_dm_explicit is None: missing_core.append("max_summer_draught_m or draught_dm in invoice")
+    if draught_m is None and draught_dm_explicit is None:
+        missing_core.append("max_summer_draught_m or draught in invoice")
     if not routes: missing_core.append("routes")
 
     # Build inputs snapshot (before any conversions)
@@ -325,15 +369,15 @@ def compute_pilotage_in(
         }
         return "\n".join(breakdown), summary
 
-    # 1) Block size (convert draught to dm)
+    # 1) Block size (draught in meters)
     if draught_dm_explicit is not None:
-        draught_dm = float(draught_dm_explicit)
-        notes.append("Draught explicitly found in invoice as dm; used dm directly.")
+        draught_used_m = float(draught_dm_explicit) / 10.0
+        notes.append("Draught from invoice in dm; converted to meters by ÷10.")
     else:
-        draught_dm = float(draught_m) * 10.0
-        notes.append("Draught provided/assumed in meters; converted to dm by ×10.")
+        draught_used_m = float(draught_m)
+        notes.append("Draught provided/assumed in meters.")
 
-    block_size = float(length_m) * float(breadth_m) * float(draught_dm)
+    block_size = float(length_m) * float(breadth_m) * float(draught_used_m)
 
     # 2) Route base fees
     route_base_fees: List[Dict[str, Any]] = []
@@ -375,7 +419,7 @@ def compute_pilotage_in(
     lines.append(f"- length_m: {length_m}")
     lines.append(f"- breadth_m: {breadth_m}")
     lines.append(f"- max_summer_draught_m: {max_summer_draught_m if max_summer_draught_m is not None else 'not provided'}")
-    lines.append(f"- draught_used_dm: {draught_dm:.2f}")
+    lines.append(f"- draught_used_m: {draught_used_m:.2f}")
     lines.append(f"- routes: {routes}")
     lines.append(f"- custom_volume_discount (%): {custom_volume_discount or 0}")
     lines.append(f"- baf_percentage (%): {baf_percentage if baf_percentage is not None else 'not provided (treated as 0)'}")
@@ -384,7 +428,7 @@ def compute_pilotage_in(
     lines.append(f"- storm_pilot_fee: {money(float(storm_pilot_fee))}")
     lines.append(f"- special_case_fee: {money(float(special_case_fee))}")
     lines.append("")
-    lines.append(f"1) Block size = length × breadth × draught(dm) = {length_m} × {breadth_m} × {draught_dm:.2f} = {block_size:,.2f}")
+    lines.append(f"1) Block size = length × breadth × draught(m) = {length_m} × {breadth_m} × {draught_used_m:.2f} = {block_size:,.2f}")
     lines.append("2) Base fee per route (using bracket where min ≤ block_size ≤ max; if above all, last row):")
     for r in route_base_fees:
         lines.append(f"   - {r['route']}: bracket [{r['range_min']:,}–{r['range_max']:,}] -> {money(r['base_fee_eur'])}")

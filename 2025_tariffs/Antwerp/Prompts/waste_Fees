@@ -1,92 +1,74 @@
-You are to compute the Compulsory Waste Fee for Port of Antwerp using ONLY the variables provided below. Do not parse or rely on any invoice text. Do not apply any other surcharges/discounts beyond what is explicitly listed here.
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
 
-CONSTANTS (set these before calculation; per current tariff-year):
-- FIXED_WASTE_FEE_EUR = <enter fixed fee, e.g., 150.00>
-- WASTE_TARIFF_PER_GT_EUR = <enter rate per GT, e.g., 0.0450>
-- SHORT_VOYAGE_DISCOUNT_RATE = 0.05  # 5%
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
 
-INPUTS (taken as-is from the message data):
-- Vessel particulars:
-  - Name: {{vessel.name}}
-  - GT (gross tonnage): {{vessel.particulars.grossTonnage}}
-  - Reduced GT: {{vessel.particulars.reducedGrossTonnage}}
-  - NT: {{vessel.particulars.netTonnage}}
-  - LOA: {{vessel.particulars.loa}}
-  - BOA: {{vessel.particulars.boa}}
-  - LBP: {{vessel.particulars.lbp}}
-  - Type: {{vessel.type}}
-  - ESI score: {{vessel.esiScore}}
-  - Green Award score: {{vessel.greenAward}}
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
 
-- Port call data (not used unless to set flags):
-  - Draft in: {{portCall.prospects.currentProspects.arrival.details.draftAft}}
-  - Draft out: {{portCall.prospects.currentProspects.departureDraftAft}}
-  - Tugs in: {{portCall.prospects.currentProspects.arrival.details.tugs}}
-  - Tugs out: {{portCall.prospects.currentProspects.departure.details.tugs}}
-  - Cargo list and terminals provided but not used in the computation unless they explicitly set flags.
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
 
-FLAGS (set explicitly; default False if unknown):
-- is_iso_certified = <true/false>  # Only if an ISO 14001 certificate is explicitly confirmed
-- is_short_movement = <true/false> # Only if the waste tariff explicitly allows “short voyage/movement” discount for this call
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
 
-INVOICE FIELDS (used only for ±2% comparison; do NOT influence computation):
-- line.currency = {{line.currency}}
-- line.localAmount = {{line.localAmount}}
-- line.line.name = {{line.line.name}}
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
 
-RULES:
-1) Use GT = {{vessel.particulars.grossTonnage}} as gt_size. Do NOT switch to Reduced GT or NT unless explicitly instructed; leave at GT.
-2) Compute:
-   - variable_fee = gt_size × WASTE_TARIFF_PER_GT_EUR
-   - initial_fee = FIXED_WASTE_FEE_EUR + variable_fee
-   - total_fee = initial_fee
-3) Discounts applied ONLY on initial_fee, in this order and only if flag is true:
-   a) ISO 14001 discount: 10% of initial_fee (if is_iso_certified = true)
-   b) Short Voyage discount: 5% of initial_fee (if is_short_movement = true)
-   Subtract each applicable discount from total_fee and list them in the breakdown.
-4) No other discounts/surcharges apply.
+Antwerp Compulsory Waste Fee
+---------------------------
 
-OUTPUT:
-A) Human-readable breakdown (exact lines):
-- "Compulsory Waste Fee Calculation - Port of Antwerp"
-- "Fixed Fee: {FIXED_WASTE_FEE_EUR:.2f} EUR"
-- "Variable Fee: GT {gt_size} x {WASTE_TARIFF_PER_GT_EUR:.4f} = {variable_fee:.2f} EUR"
-- If is_iso_certified: "- ISO 14001 Certificate Discount Applied (10%): -{iso_discount:.2f} EUR"
-- If is_short_movement: "- Short Voyage Discount Applied (5%): -{short_discount:.2f} EUR"
-- "Total Waste Fee: {total_fee:.2f} EUR"
+Use the constants and inputs injected above. Only check the invoice if any value is missing; if still missing, capture it in brackets with units.
+Return a numbered, human-readable breakdown and the final fee. Do not apply other surcharges or discounts.
 
-B) JSON summary:
-{
-  "inputs": {
-    "gt_size": <number>,
-    "is_iso_certified": <bool>,
-    "is_short_movement": <bool>,
-    "fixed_waste_fee_eur": <number>,
-    "waste_tariff_per_gt_eur": <number>,
-    "short_voyage_discount_rate": 0.05,
-    "invoice_amount": {{line.localAmount}},
-    "currency": "{{line.currency}}",
-    "line_name": "{{line.line.name}}"
-  },
-  "calculation": {
-    "variable_fee_eur": <number>,
-    "initial_fee_eur": <number>,
-    "iso_discount_eur": <number or 0>,
-    "short_voyage_discount_eur": <number or 0>,
-    "total_fee_eur": <number>
-  },
-  "validation": {
-    "variance_pct": abs(total_fee_eur - invoice_amount) / total_fee_eur,
-    "pass_within_2pct": (abs(total_fee_eur - invoice_amount) / total_fee_eur) <= 0.02
-  },
-  "notes": [
-    "Computation is variables-only (no invoice parsing).",
-    "Discounts applied only if explicitly flagged."
-  ]
-}
+Constants
+- FIXED_WASTE_FEE_EUR = {{{fixed_fee_eur}}}
+- WASTE_TARIFF_PER_GT_EUR = {{{tariff_per_gt_eur}}}
+- SHORT_VOYAGE_DISCOUNT_RATE = 0.05
 
-TASK:
-- Fill constants and flags.
-- Use gt_size = {{vessel.particulars.grossTonnage}}.
-- Produce the breakdown and JSON summary exactly as specified.
-- Do not add any other adjustments.
+Inputs
+- GT = {{{vessel.particulars.grossTonnage}}}
+- ISO14001Certified = {{{vessel.iso14001}}}
+- IsShortVoyage = {{{voyage.shortVoyage}}}
+- InvoiceAmountExclVAT (optional)
+
+Steps
+1. VariableFee = GT × WASTE_TARIFF_PER_GT_EUR
+2. InitialFee = FIXED_WASTE_FEE_EUR + VariableFee
+3. ISO discount = 10% of InitialFee if ISO14001Certified
+4. Short-voyage discount = 5% of InitialFee if IsShortVoyage
+5. TotalFee = InitialFee − ISO discount − Short-voyage discount
+6. Round TotalFee to 2 decimals
+7. If invoice amount provided: variance = |TotalFee − Invoice| / TotalFee and flag Pass/Fail at ±2%
+
+Output
+- TotalFee in EUR
+- Numbered breakdown of each step
+- Invoice variance and Pass/Fail if invoice amount supplied

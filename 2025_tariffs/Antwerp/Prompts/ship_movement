@@ -1,6 +1,56 @@
-Check vessel LOA and use below table to look up correct tariff.
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
 
-LOA_Antwerp_TARIFFS = 
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
+
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
+
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
+
+Antwerp Ship Movement (VBS)
+---------------------------
+
+Use vessel LOA {{{vessel.particulars.loa}}}; only consult the invoice if LOA or rounding is missing. If still missing, capture it in brackets with units.
+Return a numbered, human-readable breakdown:
+1. LOA {{{vessel.particulars.loa}}} and LOA used after rounding.
+2. Tariff looked up in the table below.
+
+LOA_Antwerp_TARIFFS =
 
 41,118
 42,118
@@ -218,4 +268,8 @@ LOA_Antwerp_TARIFFS =
 999,1318
 1000,1318
 
-On the invoice from pilotage this amount is mentioned as a separate line and is called VBS
+Output:
+- Tariff in EUR
+- Step-by-step explanation as above
+
+Note: on pilotage invoices this amount appears as a line named "VBS".

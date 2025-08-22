@@ -1,4 +1,50 @@
-Goal: Calculate the Antwerp pilotage-in fee using the block-size method with exact tariffs. Provide a step-by-step breakdown and a JSON summary.
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
+
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
+
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
+
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
+
+Goal: Calculate the Antwerp pilotage-in fee using the block-size method with exact tariffs.
+Use the injected values above; only consult the invoice when a value is missing. If still missing, capture it in brackets with units.
+Return a numbered, human-readable breakdown followed by a JSON summary.
 
 IMPORTANT:
 IN THE INVOICE There will be VBS. Do not consider that when you validate your answer. That is another Line Item, not related to the actual Pilotage Calculations. Just look at the other lines.
@@ -10,9 +56,9 @@ Data usage rule:
 -Bunker Adjustment Factor HAS TO BE taken from the invoice and added to the final amount. We cannot capture the bunker adjustment factor so please look at it from the invoice.
 
 Inputs (use or derive):
-- length_m
-- breadth_m
-- max_summer_draught_m
+- length_m = {{{vessel.particulars.loa}}}
+- breadth_m = {{{vessel.particulars.boa}}}
+- max_summer_draught_m (if not injected, read from invoice; convert dm to m)
 - routes (list of strings; must match the exact route keys below)
 - baf_percentage (%, can be 0)
 - cancellation_fee (EUR)
@@ -36,9 +82,9 @@ Allowed route keys (must match exactly):
 
 Computation (in this exact order):
 1) Block size
-   - draught_dm = draught_value if unit == 'dm' else draught_value * 10
-   - block_size = LOA_m × Beam_m × draught_dm
-   - If user provided draught in meters but invoice bracket indicates dm (e.g., totals align only with dm), switch to dm and note assumption.
+    - draught_m = draught_value if unit == 'm' else draught_value / 10
+    - block_size = length_m × breadth_m × draught_m
+    - Note: if invoice shows draught in dm, divide by 10 to convert to meters.
 
 2) For each route in routes:
    - Find the table row where min ≤ block_size ≤ max.

@@ -1,49 +1,76 @@
-1) Base tariff by LOA:
-   - Find the row where LOA_m ∈ [from, to] (inclusive) in the MOORING_TARIFFS table below.
-   - Base = that row’s tariff.
-   - If LOA_m > 400:
-       - Take the 400.00m band’s base and add extra segments:
-         extra_segments = ceil((LOA_m - 400) / 5)
-         Base += extra_segments × FRACTION_RATES["mooring"]
-       - FRACTION_RATES["mooring"] = 184 (EUR per extra 5m)
-   - If no band matches: return an error.
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
 
-2) Time-based supplement (mutually exclusive):
-   - If ServiceTimeLocal is on Sunday (weekday = 6): TimeSuppl = Base × 0.50
-   - Else if ServiceTimeLocal hour is ≥ 19 or < 7: TimeSuppl = Base × 0.25
-   - Else: TimeSuppl = 0
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
 
-3) Location supplement:
-   - If Location contains "riverquay" (case-insensitive): LocSuppl = Base × 0.30
-   - Else: LocSuppl = 0
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
 
-4) Delay supplement:
-   - If delay is known and > 45 minutes:
-       - HoursDelayed = ceil((DelayMinutes - 45)/60)
-       - DelaySuppl = (Base + TimeSuppl + LocSuppl) × 0.50 × HoursDelayed
-   - Else: DelaySuppl = 0
-   - If delay unknown: assume 0 and state assumption.
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
 
-5) Reductions:
-   - Reductions = 0
-   - If IsSecondCall: Reductions += Base × 0.25
-   - If IsShortMovement: Reductions += Base × 0.50
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
 
-6) Cancellation:
-   - CancelFee = Base × 0.50 if IsCancelled else 0
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
 
-7) Final amount:
-   - Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee - Reductions
-   - Round to 2 decimals.
+Antwerp Mooring Fee
+-------------------
 
-8) Validation:
-   - Accept if |Total - BilledAmountEUR| / Total ≤ 0.02 (±2%).
-   - Otherwise, flag mismatch and explain briefly which components drive the difference
-     (e.g., wrong LOA band, night/Sunday not applied, riverquay not applied, reductions/cancellation/ delay not considered).
+Use the injected values above. Only consult the invoice when a value is missing; if still absent, capture it in brackets with units.
+Return a numbered, human-readable breakdown and the final amount. If a billed amount is known, show the variance and mark Pass/Fail at ±2%.
 
-CHECK THE INVOICE. THERE are certain things that we cannot capture without the invoice such as Extra Boatmen or Extra Motorboat. Those should directly be added from the invoice itself. If it is under Mooring services, also add them to your final answer.
+Steps
+1. Base tariff by LOA ({{{vessel.particulars.loa}}} m):
+   - Find the row where LOA_m is between "from" and "to" in MOORING_TARIFFS.
+   - If LOA_m > 400: extra_segments = ceil((LOA_m-400)/5);
+     Base += extra_segments × 184 (FRACTION_RATES["mooring"]).
+2. Time supplement (choose one):
+   - Sunday → +50% of Base
+   - Night (19:00–07:00) → +25% of Base
+   - Otherwise 0
+3. Location supplement: +30% of Base if Location contains "riverquay".
+4. Delay supplement:
+   - If DelayMinutes > 45:
+       HoursDelayed = ceil((DelayMinutes-45)/60)
+       DelaySuppl = (Base + TimeSuppl + LocSuppl) × 0.50 × HoursDelayed
+   - Else 0
+5. Reductions:
+   - −25% of Base if IsSecondCall
+   - −50% of Base if IsShortMovement
+6. Cancellation fee: Base × 0.50 if IsCancelled else 0
+7. Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee − Reductions
+8. Validate against invoice if provided.
 
-Antwerp MOORING_TARIFFS (EUR):
+MOORING_TARIFFS (EUR):
 [
     (0, 80.00, 190),
     (80.01, 90.00, 245),
@@ -94,13 +121,4 @@ Antwerp MOORING_TARIFFS (EUR):
     (390.01, 395.00, 5669),
     (395.01, 400.00, 5852)
 ]
-
-Additional constants:
-- FRACTION_RATES["mooring"] = 184  (EUR per 5m beyond 400m)
-- Night window: 19:00–07:00 → +25% (night)
-- Sunday: +50% (overrides night if both)
-
-Output:
-- “Calculated Mooring: X EUR”
-- A short breakdown: Base, TimeSuppl, LocSuppl, DelaySuppl, Reductions, CancelFee, Total
-- Pass/Fail vs ±2% with one-line reason if fail.
+Fraction rate beyond 400m: 184 EUR per 5m.

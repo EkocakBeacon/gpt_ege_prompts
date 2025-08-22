@@ -1,21 +1,69 @@
-Data usage rule:
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
 
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
+
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
+
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
+
+Goal: Calculate the Antwerp pilotage-out fee using the block-size method with exact tariffs.
+Use the injected values above; only consult the invoice when a value is missing. If still missing, capture it in brackets with units.
+Return a numbered, human-readable breakdown followed by a JSON summary.
+
+Data usage rule:
 Use provided variables first.
 Only if a variable is missing, try to parse it from the invoice text.
 If still missing, leave as “not provided”.
 Bunker Adjustment Factor (BAF) MUST be taken from the invoice and added to the final amount. If not found, use 0 and note the source as “not found in invoice”.
+
 Inputs (use or derive):
 
-length_m
-breadth_m
-max_summer_draught_m (if invoice shows draught in dm, convert to meters)
-routes (list of strings; must match the exact route keys below)
-baf_percentage (%, can be 0; must come from invoice if present)
-cancellation_fee (EUR)
-delay_fee (EUR)
-storm_pilot_fee (EUR)
-special_case_fee (EUR)
-custom_volume_discount (%, optional; default 0 if absent)
+- length_m = {{{vessel.particulars.loa}}}
+- breadth_m = {{{vessel.particulars.boa}}}
+- max_summer_draught_m (if not injected, read from invoice; convert dm to m)
+- routes (list of strings; must match the exact route keys below)
+- baf_percentage (%, can be 0; must come from invoice if present)
+- cancellation_fee (EUR)
+- delay_fee (EUR)
+- storm_pilot_fee (EUR)
+- special_case_fee (EUR)
+- custom_volume_discount (%, optional; default 0 if absent)
 Allowed route keys (must match exactly):
 
 "Zee-omgekeerd"

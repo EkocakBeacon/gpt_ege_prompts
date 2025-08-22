@@ -1,0 +1,217 @@
+The vessel has the following particulars:
+Name: {{{vessel.name}}}
+LOA: {{{vessel.particulars.loa}}}
+Beam: {{{vessel.particulars.boa}}}
+GT: {{{vessel.particulars.grossTonnage}}}
+Reduced GT: {{{vessel.particulars.reducedGrossTonnage}}}
+Net Tonnage (NT): {{{vessel.particulars.netTonnage}}}
+NRT: {{{vessel.nrt}}}
+Summer Deadweight: {{{vessel.summerDwt}}}
+Winter Deadweight: {{{vessel.winterDwt}}}
+Length between perpendiculars: {{{vessel.particulars.lbp}}}
+Type: {{{vessel.type}}}
+ESI score: {{{vessel.esiScore}}}
+Green Award score: {{{vessel.greenAward}}}
+
+Port call data:
+Draft in: {{{portCall.prospects.currentProspects.arrival.details.draftAft}}}
+Draft out: {{{portCall.prospects.currentProspects.departureDraftAft}}}
+Tugs in: {{{portCall.prospects.currentProspects.arrival.details.tugs}}}
+Tugs out: {{{portCall.prospects.currentProspects.departure.details.tugs}}}
+Cargoes:
+{{#portCall.prospects.currentProspects.terminals}}
+{{#cargoes}}
+* {{cargo.operation.label}} {{cargo.quantity}} {{cargo.quantityMetricLabel}} of {{cargo.cargo.name}}
+{{/cargoes}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Terminal names: 
+{{#portCall.prospects.currentProspects.terminals}}
+{{#terminal}}
+*{{name}}
+{{/terminal}}
+{{/portCall.prospects.currentProspects.terminals}}
+
+Local arrival time: {{{portCall.ata}}}
+Local berthing time: {{{portCall.atb}}}
+Local completion of cargo operation time: {{{portCall.atc}}}
+Local departure time: {{{portCall.atd}}}
+
+The amount that was invoiced to the vessel was: {{{line.currency}}} {{{line.localAmount}}}. It was for {{{line.line.name}}}.
+
+The invoice image(s) are attached.  
+Calculation instructions: {{{lineInstructions}}}
+
+Act as a code interpreter and execute the following code. Use the injected values above and only read the invoice if a value is missing (capture it in brackets with units). Show the raw code output first, then provide a human-readable explanation and any discrepancy.
+"""
+Antwerp Mooring Fee Calculator
+------------------------------
+
+Rules (summarised):
+1) Base tariff by LOA using MOORING_TARIFFS table.  If LOA > 400m,
+   add extra segments of 5m charged at FRACTION_RATES['mooring'] (=184 EUR).
+2) Time-based supplement: Sunday +50%, else night (19:00–07:00) +25%, else 0.
+3) Location supplement: +30% if location contains "riverquay".
+4) Delay supplement: if delay >45min → 50% of (Base+TimeSuppl+LocSuppl) per started hour beyond 45min.
+5) Reductions: -25% for second call; -50% for short movement.
+6) Cancellation: +50% of Base if cancelled.
+7) Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee - Reductions.
+"""
+
+from __future__ import annotations
+import argparse
+import datetime as dt
+import json
+import math
+from typing import List, Tuple
+
+MOORING_TARIFFS: List[Tuple[float, float, float]] = [
+    (0, 80.00, 190), (80.01, 90.00, 245), (90.01, 100.00, 252),
+    (100.01, 110.00, 338), (110.01, 120.00, 350), (120.01, 130.00, 398),
+    (130.01, 138.00, 418), (138.01, 146.00, 445), (146.01, 152.00, 499),
+    (152.01, 157.00, 571), (157.01, 160.00, 588), (160.01, 167.50, 624),
+    (167.51, 175.00, 774), (175.01, 182.50, 854), (182.51, 190.00, 909),
+    (190.01, 197.50, 949), (197.51, 205.00, 1003), (205.01, 212.50, 1028),
+    (212.51, 220.00, 1102), (220.01, 227.50, 1155), (227.51, 235.00, 1330),
+    (235.01, 242.50, 1482), (242.51, 250.00, 1544), (250.01, 257.50, 1594),
+    (257.51, 265.00, 1661), (265.01, 272.50, 1720), (272.51, 280.00, 1769),
+    (280.01, 287.50, 1828), (287.51, 295.00, 1956), (295.01, 302.50, 2257),
+    (302.51, 310.00, 2364), (310.01, 317.50, 2581), (317.51, 325.00, 2795),
+    (325.01, 330.00, 3137), (330.01, 335.00, 3482), (335.01, 340.00, 3822),
+    (340.01, 345.00, 3991), (345.01, 350.00, 4143), (350.01, 355.00, 4178),
+    (355.01, 360.00, 4371), (360.01, 365.00, 4559), (365.01, 370.00, 4749),
+    (370.01, 375.00, 4933), (375.01, 380.00, 5118), (380.01, 385.00, 5302),
+    (385.01, 390.00, 5483), (390.01, 395.00, 5669), (395.01, 400.00, 5852)
+]
+
+FRACTION_RATES = {"mooring": 184}
+
+
+def _find_base(loa: float) -> float:
+    for lo, hi, tariff in MOORING_TARIFFS:
+        if lo <= loa <= hi:
+            return tariff
+    # Above table
+    base_400 = MOORING_TARIFFS[-1][2]
+    extra_segments = math.ceil((loa - 400) / 5)
+    return base_400 + extra_segments * FRACTION_RATES["mooring"]
+
+
+def calculate_mooring(
+    *,
+    loa_m: float,
+    service_time: dt.datetime,
+    location: str,
+    delay_minutes: float | None = None,
+    is_second_call: bool = False,
+    is_short_movement: bool = False,
+    is_cancelled: bool = False,
+    billed_amount_eur: float | None = None,
+) -> tuple[str, dict]:
+    base = _find_base(loa_m)
+
+    # Supplements
+    if service_time.weekday() == 6:
+        time_suppl = base * 0.50
+    elif service_time.hour >= 19 or service_time.hour < 7:
+        time_suppl = base * 0.25
+    else:
+        time_suppl = 0.0
+
+    loc_suppl = base * 0.30 if "riverquay" in location.lower() else 0.0
+
+    delay_suppl = 0.0
+    if delay_minutes and delay_minutes > 45:
+        hours_delayed = math.ceil((delay_minutes - 45) / 60)
+        delay_suppl = (base + time_suppl + loc_suppl) * 0.50 * hours_delayed
+
+    reductions = 0.0
+    if is_second_call:
+        reductions += base * 0.25
+    if is_short_movement:
+        reductions += base * 0.50
+
+    cancel_fee = base * 0.50 if is_cancelled else 0.0
+
+    total = base + time_suppl + loc_suppl + delay_suppl + cancel_fee - reductions
+    total = round(total, 2)
+
+    variance = None
+    pass_2pct = None
+    if billed_amount_eur is not None:
+        variance = abs(total - billed_amount_eur) / total
+        pass_2pct = variance <= 0.02
+
+    breakdown_lines = [
+        "Antwerp Mooring Fee Calculation",
+        f"1) Base tariff = {base:.2f} EUR",
+        f"2) Time supplement = {time_suppl:.2f} EUR",
+        f"3) Location supplement = {loc_suppl:.2f} EUR",
+        f"4) Delay supplement = {delay_suppl:.2f} EUR",
+        f"5) Reductions = {reductions:.2f} EUR",
+        f"6) Cancellation fee = {cancel_fee:.2f} EUR",
+        f"7) Total = {base:.2f} + {time_suppl:.2f} + {loc_suppl:.2f} + {delay_suppl:.2f} + {cancel_fee:.2f} - {reductions:.2f} = {total:.2f} EUR",
+    ]
+    breakdown = "\n".join(breakdown_lines)
+
+    summary = {
+        "inputs": {
+            "loa_m": loa_m,
+            "service_time": service_time.isoformat(),
+            "location": location,
+            "delay_minutes": delay_minutes,
+            "is_second_call": is_second_call,
+            "is_short_movement": is_short_movement,
+            "is_cancelled": is_cancelled,
+            "billed_amount_eur": billed_amount_eur,
+        },
+        "computed": {
+            "base_eur": round(base, 2),
+            "time_suppl_eur": round(time_suppl, 2),
+            "loc_suppl_eur": round(loc_suppl, 2),
+            "delay_suppl_eur": round(delay_suppl, 2),
+            "reductions_eur": round(reductions, 2),
+            "cancel_fee_eur": round(cancel_fee, 2),
+            "total_eur": total,
+        },
+        "validation": {
+            "variance_pct": variance,
+            "pass_within_2pct": pass_2pct,
+        },
+    }
+
+    return breakdown, summary
+
+
+def _cli() -> None:
+    p = argparse.ArgumentParser(description="Antwerp mooring calculator")
+    p.add_argument("--loa", type=float, required=True)
+    p.add_argument("--service-time", type=str, required=True, help="ISO datetime")
+    p.add_argument("--location", type=str, required=True)
+    p.add_argument("--delay-minutes", type=float)
+    p.add_argument("--second-call", action="store_true")
+    p.add_argument("--short-movement", action="store_true")
+    p.add_argument("--cancelled", action="store_true")
+    p.add_argument("--billed", type=float)
+    args = p.parse_args()
+
+    st = dt.datetime.fromisoformat(args.service_time)
+    breakdown, summary = calculate_mooring(
+        loa_m=args.loa,
+        service_time=st,
+        location=args.location,
+        delay_minutes=args.delay_minutes,
+        is_second_call=args.second_call,
+        is_short_movement=args.short_movement,
+        is_cancelled=args.cancelled,
+        billed_amount_eur=args.billed,
+    )
+
+    print("Calculated Mooring:", summary["computed"]["total_eur"], "EUR")
+    print(breakdown)
+    print("\nJSON Summary:\n" + json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    _cli()
+
