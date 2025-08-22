@@ -4,6 +4,17 @@ Antwerp Mooring Fee
 Use injected variables first. Only consult the invoice when a value is missing; if still absent, state it.
 Return a numbered, human-readable breakdown and the final amount. If a billed amount is known, show the variance and mark Pass/Fail at ±2%.
 
+Inputs
+------
+- loa_m = {{loa_m}}
+- service_time = {{service_time}}
+- location = {{location}}
+- delay_minutes = {{delay_minutes}}
+- is_second_call = {{is_second_call}}
+- is_short_movement = {{is_short_movement}}
+- is_cancelled = {{is_cancelled}}
+- invoice_amount (optional)
+
 Steps
 1. Base tariff by LOA:
    - Find the row where LOA_m is between "from" and "to" in MOORING_TARIFFS.
