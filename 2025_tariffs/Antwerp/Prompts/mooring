@@ -1,49 +1,32 @@
-1) Base tariff by LOA:
-   - Find the row where LOA_m ∈ [from, to] (inclusive) in the MOORING_TARIFFS table below.
-   - Base = that row’s tariff.
-   - If LOA_m > 400:
-       - Take the 400.00m band’s base and add extra segments:
-         extra_segments = ceil((LOA_m - 400) / 5)
-         Base += extra_segments × FRACTION_RATES["mooring"]
-       - FRACTION_RATES["mooring"] = 184 (EUR per extra 5m)
-   - If no band matches: return an error.
+Antwerp Mooring Fee
+-------------------
 
-2) Time-based supplement (mutually exclusive):
-   - If ServiceTimeLocal is on Sunday (weekday = 6): TimeSuppl = Base × 0.50
-   - Else if ServiceTimeLocal hour is ≥ 19 or < 7: TimeSuppl = Base × 0.25
-   - Else: TimeSuppl = 0
+Use injected variables first. Only consult the invoice when a value is missing; if still absent, state it.
+Return a numbered, human-readable breakdown and the final amount. If a billed amount is known, show the variance and mark Pass/Fail at ±2%.
 
-3) Location supplement:
-   - If Location contains "riverquay" (case-insensitive): LocSuppl = Base × 0.30
-   - Else: LocSuppl = 0
+Steps
+1. Base tariff by LOA:
+   - Find the row where LOA_m is between "from" and "to" in MOORING_TARIFFS.
+   - If LOA_m > 400: extra_segments = ceil((LOA_m-400)/5);
+     Base += extra_segments × 184 (FRACTION_RATES["mooring"]).
+2. Time supplement (choose one):
+   - Sunday → +50% of Base
+   - Night (19:00–07:00) → +25% of Base
+   - Otherwise 0
+3. Location supplement: +30% of Base if Location contains "riverquay".
+4. Delay supplement:
+   - If DelayMinutes > 45:
+       HoursDelayed = ceil((DelayMinutes-45)/60)
+       DelaySuppl = (Base + TimeSuppl + LocSuppl) × 0.50 × HoursDelayed
+   - Else 0
+5. Reductions:
+   - −25% of Base if IsSecondCall
+   - −50% of Base if IsShortMovement
+6. Cancellation fee: Base × 0.50 if IsCancelled else 0
+7. Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee − Reductions
+8. Validate against invoice if provided.
 
-4) Delay supplement:
-   - If delay is known and > 45 minutes:
-       - HoursDelayed = ceil((DelayMinutes - 45)/60)
-       - DelaySuppl = (Base + TimeSuppl + LocSuppl) × 0.50 × HoursDelayed
-   - Else: DelaySuppl = 0
-   - If delay unknown: assume 0 and state assumption.
-
-5) Reductions:
-   - Reductions = 0
-   - If IsSecondCall: Reductions += Base × 0.25
-   - If IsShortMovement: Reductions += Base × 0.50
-
-6) Cancellation:
-   - CancelFee = Base × 0.50 if IsCancelled else 0
-
-7) Final amount:
-   - Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee - Reductions
-   - Round to 2 decimals.
-
-8) Validation:
-   - Accept if |Total - BilledAmountEUR| / Total ≤ 0.02 (±2%).
-   - Otherwise, flag mismatch and explain briefly which components drive the difference
-     (e.g., wrong LOA band, night/Sunday not applied, riverquay not applied, reductions/cancellation/ delay not considered).
-
-CHECK THE INVOICE. THERE are certain things that we cannot capture without the invoice such as Extra Boatmen or Extra Motorboat. Those should directly be added from the invoice itself. If it is under Mooring services, also add them to your final answer.
-
-Antwerp MOORING_TARIFFS (EUR):
+MOORING_TARIFFS (EUR):
 [
     (0, 80.00, 190),
     (80.01, 90.00, 245),
@@ -94,13 +77,4 @@ Antwerp MOORING_TARIFFS (EUR):
     (390.01, 395.00, 5669),
     (395.01, 400.00, 5852)
 ]
-
-Additional constants:
-- FRACTION_RATES["mooring"] = 184  (EUR per 5m beyond 400m)
-- Night window: 19:00–07:00 → +25% (night)
-- Sunday: +50% (overrides night if both)
-
-Output:
-- “Calculated Mooring: X EUR”
-- A short breakdown: Base, TimeSuppl, LocSuppl, DelaySuppl, Reductions, CancelFee, Total
-- Pass/Fail vs ±2% with one-line reason if fail.
+Fraction rate beyond 400m: 184 EUR per 5m.

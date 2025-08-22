@@ -1,142 +1,58 @@
-Task
-- For each Antwerp harbour-dues invoice line, identify the product type and compute the amount accordingly.
-- Two distinct products:
-  1) ZVR_GT (Zeevaartrechten) — GT-based harbour dues
-  2) Aanlegrecht_Tons — cargo-based dues on loaded/discharged tonnage
-- Reconcile computed totals against invoice and flag ±2% variance.
+Antwerp Harbour Dues
+---------------------
 
-Product Routing (from line description)
-- If description contains “aanlegrecht” and “geladen/geloste tonnen” (or equivalent), classify as Aanlegrecht_Tons.
-- Else if description contains “Zeevaartrechten (ZVR)” and no “aanlegrecht”, classify as ZVR_GT.
-- If ambiguous, flag and request clarification.
+Use values provided through injected variables. Only read the invoice if a required value is missing; if still missing, report it.
+Return a numbered, human-readable breakdown and the final amount. If an invoice amount is available, show the variance and note Pass/Fail at ±2%.
 
-Shared Inputs (parsed from invoice and call data)
-- vessel_type_raw (e.g., tanker, bulkcarrier, container, roro, reefer, other)
-INPUTS SHOULD ALWAYS BE TAKEN FROM THE INSTRUCTIONS. IF NOT FOUND IN THE INSTRUCTIONS, THEN YOU SHOULD LOOK AT THE INVOICE. 
+Products
+========
+1. ZVR_GT – GT-based harbour dues
+   Steps:
+   1. Map vessel type:
+      tanker→tanker, bulkcarrier→bulk, container→containership,
+      roro→roro, reefer→reefer, anything else→other.
+   2. Service type:
+      - shortsea if IsShortsea
+      - deepsea if IsLiner
+      - otherwise non-liner
+   3. Base tariff (€/GT):
+      LINER_TARIFFS = { containership: {deepsea:0.3275, shortsea:0.2629},
+                        roro:{deepsea:0.2237, shortsea:0.2237},
+                        tanker:{deepsea:0.4752, shortsea:0.4752},
+                        reefer:{deepsea:0.3621, shortsea:0.3621},
+                        bulk:{deepsea:0.3621, shortsea:0.3621},
+                        other:{deepsea:0.5322, shortsea:0.5322} }
+      NON_LINER_TARIFFS = { containership:0.8072, roro:0.6243,
+                            tanker:0.9337, reefer:0.7623,
+                            bulk:0.7623, other:0.9337 }
+      Base = GT × selected tariff.
+   4. Frequency discount by VoyageNumber (liners only):
+      deepsea: 53–150→10%, 151–200→20%, ≥201→30%
+      shortsea: 27–52→25%, ≥53→50%
+      AfterFreq = Base × (1 - discount).
+   5. ESI discount by ESI_score and VesselBuiltYear:
+      70.1–100→15%; 50.1–70.09→10%;
+      31–50.09 and built ≤2010→4%
+      AfterESI = AfterFreq × (1 - discount).
+   6. Special rate override:
+      If SpecialRate = True → AfterESI = GT × 0.2145
+      (skip steps 3–5).
+   7. Extended stay fee:
+      If DaysInPort > 20:
+         periods = floor((DaysInPort-20)/20) + 1
+         ExtFee = periods × GT × NON_LINER_TARIFFS[mapped_type]
+      Else ExtFee = 0
+   8. Total = AfterESI + ExtFee
 
-- GT (gross tonnage)
-- VoyageNumber (integer, if available)
-- IsShortsea (bool), IsLiner (bool)
-- ESI_score (float), VesselBuiltYear (int)
-- SpecialRate (bool)
-- DaysInPort (integer)
-- InvoiceAmountExclVAT (float)
-- service_date (for tariff-year validity; if unknown, state assumption)
+2. Aanlegrecht_Tons – cargo dues
+   Steps:
+   1. TonsUsed = loaded_tons + discharged_tons
+   2. Amount = TonsUsed × unit_rate_eur_per_ton
+   3. Total = round(Amount, 2)
 
-----------------------------------------------------------------------
-A) ZVR_GT — GT-based Harbour Dues
-----------------------------------------------------------------------
-
-1) Map vessel type
-- Map to one of: tanker, bulk, containership, roro, reefer, other
-  Mapping:
-  - tanker → tanker
-  - bulkcarrier → bulk
-  - container → containership
-  - roro → roro
-  - reefer → reefer
-  - other → other
-
-2) Determine service_type
-- If IsShortsea = True → service_type = "shortsea"
-- Else if IsLiner = True → service_type = "deepsea"
-- Else → service_type = "non-liner"
-
-3) Base tariff (€/GT)
-- Liner:
-  - containership: deepsea scheldt 0.3275; shortsea 0.2629 (use “scheldt” branch when applicable)
-  - roro: deepsea 0.2237; shortsea 0.2237
-  - tanker: deepsea 0.4752; shortsea 0.4752
-  - reefer: deepsea 0.3621; shortsea 0.3621
-  - bulk: deepsea 0.3621; shortsea 0.3621
-  - other: deepsea 0.5322; shortsea 0.5322
-- Non-liner:
-  - containership: scheldt 0.8072 (locks 0.7623 not used here)
-  - roro: 0.6243
-  - tanker: 0.9337
-  - reefer: 0.7623
-  - bulk: 0.7623
-  - other: 0.9337
-
-4) Base dues
-- Base = GT × BaseTariff
-
-5) Frequency discount (liners only; based on VoyageNumber)
-- If service_type = deepsea:
-  - 53–150 → 10%
-  - 151–200 → 20%
-  - 201+ → 30%
-- If service_type = shortsea:
-  - 27–52 → 25%
-  - 53+ → 50%
-- BaseAfterFreq = Base × (1 - FreqDiscount)
-
-6) ESI discount (apply on BaseAfterFreq)
-- If 70.1–100 → 15%
-- If 50.1–70.09 → 10%
-- If 31.0–50.09 → 4% (skip this 4% tier if VesselBuiltYear > 2010)
-- AfterESI = BaseAfterFreq × (1 - ESIDiscount)
-
-7) Special rate override
-- If SpecialRate = True → AfterESI = GT × 0.2145 (override all above)
-
-8) Extended stay (>20 days)
-- If DaysInPort > 20:
-  - periods = floor((DaysInPort - 20)/20) + 1
-  - NON_LINER_TARIFFS mapped by vessel type:
-    containership=0.8072, roro=0.6243, tanker=0.9337, reefer=0.7623, bulk=0.7623, other=0.9337
-  - ExtFee = periods × GT × NON_LINER_TARIFFS[mapped_type]
-  - Total = AfterESI + ExtFee
-- Else:
-  - Total = AfterESI
-
-9) Validation
-- FinalAmountEUR = round(Total, 2)
-- Pass if |FinalAmountEUR - InvoiceAmountExclVAT| / FinalAmountEUR ≤ 0.02
-- Else, flag mismatch and list possible causes:
-  wrong base tariff, missing liner frequency, ESI tier, special rate override, or extended stay.
-
-Constraints
-- Do NOT include cargo dues (e.g., 0.2062 €/t) in ZVR_GT; those are Aanlegrecht_Tons and must be validated separately.
-
-Output (ZVR_GT)
-- FinalAmountEUR
-- Breakdown summary: GT, mapped_type, service_type, base tariff, Base, Freq%, ESI%, SpecialRate used?, DaysInPort, ExtFee, Total, Pass/Fail.
-
-----------------------------------------------------------------------
-B) Aanlegrecht_Tons — Cargo-based Dues (Loaded/Discharged Tons)
-----------------------------------------------------------------------
-
-1) Inputs
-- loaded_tons, discharged_tons
-- commodity_group (e.g., “minerale oliën”)
-- unit_rate_eur_per_ton:
-  - Use tariff table by commodity group (example known: minerale oliën = 0.2062 €/t).
-  - If the invoice provides the unit price, validate against tariff; if mismatch, note but use invoice rate for reconciliation.
-
-2) Quantity basis
-- TonsUsed = loaded_tons + discharged_tons, unless the invoice explicitly specifies only one (use the invoice’s stated basis).
-
-3) Amount
-- Amount = TonsUsed × unit_rate_eur_per_ton
-
-4) Validation
-- FinalAmountEUR = round(Amount, 2)
-- Pass if |FinalAmountEUR - InvoiceAmountExclVAT| / FinalAmountEUR ≤ 0.02
-- Else, flag mismatch (likely wrong commodity group or wrong €/t).
-
-Constraints
-- Do NOT mix with ZVR_GT logic; Aanlegrecht_Tons is separate and typically not affected by liner frequency, ESI, special rate, or extended stay unless a published rule states otherwise.
-
-Output (Aanlegrecht_Tons)
-- FinalAmountEUR
-- Breakdown summary: commodity_group, TonsUsed, €/t, Amount, Pass/Fail.
-
-----------------------------------------------------------------------
-General Output Fields (for both products)
-- product_type: "ZVR_GT" or "Aanlegrecht_Tons"
-- inputs used
-- unit_rate and source
-- FinalAmountEUR
-- variance% vs invoice and Pass/Fail at ±2%
-- notes: tariff-year assumption, any missing data, or invoice-provided overrides
+Output
+------
+For each product report:
+- Final amount in EUR
+- Numbered step-by-step breakdown
+- Invoice variance and Pass/Fail if invoice amount given
