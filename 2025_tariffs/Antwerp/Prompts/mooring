@@ -1,0 +1,106 @@
+1) Base tariff by LOA:
+   - Find the row where LOA_m ∈ [from, to] (inclusive) in the MOORING_TARIFFS table below.
+   - Base = that row’s tariff.
+   - If LOA_m > 400:
+       - Take the 400.00m band’s base and add extra segments:
+         extra_segments = ceil((LOA_m - 400) / 5)
+         Base += extra_segments × FRACTION_RATES["mooring"]
+       - FRACTION_RATES["mooring"] = 184 (EUR per extra 5m)
+   - If no band matches: return an error.
+
+2) Time-based supplement (mutually exclusive):
+   - If ServiceTimeLocal is on Sunday (weekday = 6): TimeSuppl = Base × 0.50
+   - Else if ServiceTimeLocal hour is ≥ 19 or < 7: TimeSuppl = Base × 0.25
+   - Else: TimeSuppl = 0
+
+3) Location supplement:
+   - If Location contains "riverquay" (case-insensitive): LocSuppl = Base × 0.30
+   - Else: LocSuppl = 0
+
+4) Delay supplement:
+   - If delay is known and > 45 minutes:
+       - HoursDelayed = ceil((DelayMinutes - 45)/60)
+       - DelaySuppl = (Base + TimeSuppl + LocSuppl) × 0.50 × HoursDelayed
+   - Else: DelaySuppl = 0
+   - If delay unknown: assume 0 and state assumption.
+
+5) Reductions:
+   - Reductions = 0
+   - If IsSecondCall: Reductions += Base × 0.25
+   - If IsShortMovement: Reductions += Base × 0.50
+
+6) Cancellation:
+   - CancelFee = Base × 0.50 if IsCancelled else 0
+
+7) Final amount:
+   - Total = Base + TimeSuppl + LocSuppl + DelaySuppl + CancelFee - Reductions
+   - Round to 2 decimals.
+
+8) Validation:
+   - Accept if |Total - BilledAmountEUR| / Total ≤ 0.02 (±2%).
+   - Otherwise, flag mismatch and explain briefly which components drive the difference
+     (e.g., wrong LOA band, night/Sunday not applied, riverquay not applied, reductions/cancellation/ delay not considered).
+
+CHECK THE INVOICE. THERE are certain things that we cannot capture without the invoice such as Extra Boatmen or Extra Motorboat. Those should directly be added from the invoice itself. If it is under Mooring services, also add them to your final answer.
+
+Antwerp MOORING_TARIFFS (EUR):
+[
+    (0, 80.00, 190),
+    (80.01, 90.00, 245),
+    (90.01, 100.00, 252),
+    (100.01, 110.00, 338),
+    (110.01, 120.00, 350),
+    (120.01, 130.00, 398),
+    (130.01, 138.00, 418),
+    (138.01, 146.00, 445),
+    (146.01, 152.00, 499),
+    (152.01, 157.00, 571),
+    (157.01, 160.00, 588),
+    (160.01, 167.50, 624),
+    (167.51, 175.00, 774),
+    (175.01, 182.50, 854),
+    (182.51, 190.00, 909),
+    (190.01, 197.50, 949),
+    (197.51, 205.00, 1003),
+    (205.01, 212.50, 1028),
+    (212.51, 220.00, 1102),
+    (220.01, 227.50, 1155),
+    (227.51, 235.00, 1330),
+    (235.01, 242.50, 1482),
+    (242.51, 250.00, 1544),
+    (250.01, 257.50, 1594),
+    (257.51, 265.00, 1661),
+    (265.01, 272.50, 1720),
+    (272.51, 280.00, 1769),
+    (280.01, 287.50, 1828),
+    (287.51, 295.00, 1956),
+    (295.01, 302.50, 2257),
+    (302.51, 310.00, 2364),
+    (310.01, 317.50, 2581),
+    (317.51, 325.00, 2795),
+    (325.01, 330.00, 3137),
+    (330.01, 335.00, 3482),
+    (335.01, 340.00, 3822),
+    (340.01, 345.00, 3991),
+    (345.01, 350.00, 4143),
+    (350.01, 355.00, 4178),
+    (355.01, 360.00, 4371),
+    (360.01, 365.00, 4559),
+    (365.01, 370.00, 4749),
+    (370.01, 375.00, 4933),
+    (375.01, 380.00, 5118),
+    (380.01, 385.00, 5302),
+    (385.01, 390.00, 5483),
+    (390.01, 395.00, 5669),
+    (395.01, 400.00, 5852)
+]
+
+Additional constants:
+- FRACTION_RATES["mooring"] = 184  (EUR per 5m beyond 400m)
+- Night window: 19:00–07:00 → +25% (night)
+- Sunday: +50% (overrides night if both)
+
+Output:
+- “Calculated Mooring: X EUR”
+- A short breakdown: Base, TimeSuppl, LocSuppl, DelaySuppl, Reductions, CancelFee, Total
+- Pass/Fail vs ±2% with one-line reason if fail.
