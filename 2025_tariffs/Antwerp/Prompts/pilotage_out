@@ -1,9 +1,13 @@
-Data usage rule:
+Goal: Calculate the Antwerp pilotage-out fee using the block-size method with exact tariffs.
+Use injected variables first; consult the invoice only if a value is missing.
+Return a numbered, human-readable breakdown followed by a JSON summary.
 
+Data usage rule:
 Use provided variables first.
 Only if a variable is missing, try to parse it from the invoice text.
 If still missing, leave as “not provided”.
 Bunker Adjustment Factor (BAF) MUST be taken from the invoice and added to the final amount. If not found, use 0 and note the source as “not found in invoice”.
+
 Inputs (use or derive):
 
 length_m

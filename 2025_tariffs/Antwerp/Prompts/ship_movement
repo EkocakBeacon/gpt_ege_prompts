@@ -1,6 +1,12 @@
-Check vessel LOA and use below table to look up correct tariff.
+Antwerp Ship Movement (VBS)
+---------------------------
 
-LOA_Antwerp_TARIFFS = 
+Use injected inputs first; only consult the invoice if LOA or rounding is missing.
+Return a numbered, human-readable breakdown:
+1. LOA provided and LOA used (after rounding).
+2. Tariff looked up in the table below.
+
+LOA_Antwerp_TARIFFS =
 
 41,118
 42,118
@@ -218,4 +224,8 @@ LOA_Antwerp_TARIFFS =
 999,1318
 1000,1318
 
-On the invoice from pilotage this amount is mentioned as a separate line and is called VBS
+Output:
+- Tariff in EUR
+- Step-by-step explanation as above
+
+Note: on pilotage invoices this amount appears as a line named "VBS".

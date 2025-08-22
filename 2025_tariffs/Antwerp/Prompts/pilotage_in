@@ -1,4 +1,6 @@
-Goal: Calculate the Antwerp pilotage-in fee using the block-size method with exact tariffs. Provide a step-by-step breakdown and a JSON summary.
+Goal: Calculate the Antwerp pilotage-in fee using the block-size method with exact tariffs.
+Use injected variables first; consult the invoice only if a value is missing.
+Return a numbered, human-readable breakdown followed by a JSON summary.
 
 IMPORTANT:
 IN THE INVOICE There will be VBS. Do not consider that when you validate your answer. That is another Line Item, not related to the actual Pilotage Calculations. Just look at the other lines.
