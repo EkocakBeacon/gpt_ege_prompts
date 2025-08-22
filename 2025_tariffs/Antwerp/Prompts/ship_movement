@@ -1,7 +1,7 @@
 Antwerp Ship Movement (VBS)
 ---------------------------
 
-Use injected inputs first; only consult the invoice if LOA or rounding is missing.
+Use the LOA: {{loa_m}} first; only consult the invoice if LOA or rounding is missing.
 Return a numbered, human-readable breakdown:
 1. LOA provided and LOA used (after rounding).
 2. Tariff looked up in the table below.

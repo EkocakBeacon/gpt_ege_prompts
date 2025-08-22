@@ -12,16 +12,16 @@ Data usage rule:
 -Bunker Adjustment Factor HAS TO BE taken from the invoice and added to the final amount. We cannot capture the bunker adjustment factor so please look at it from the invoice.
 
 Inputs (use or derive):
-- length_m
-- breadth_m
-- max_summer_draught_m
-- routes (list of strings; must match the exact route keys below)
-- baf_percentage (%, can be 0)
-- cancellation_fee (EUR)
-- delay_fee (EUR)
-- storm_pilot_fee (EUR)
-- special_case_fee (EUR)
-- custom_volume_discount (%, optional; if absent, use 0)
+- length_m = {{length_m}}
+- breadth_m = {{breadth_m}}
+- max_summer_draught_m = {{max_summer_draught_m}}
+- routes = {{routes}} (list of strings; must match the exact route keys below)
+- baf_percentage = {{baf_percentage}} (%, can be 0)
+- cancellation_fee = {{cancellation_fee}} (EUR)
+- delay_fee = {{delay_fee}} (EUR)
+- storm_pilot_fee = {{storm_pilot_fee}} (EUR)
+- special_case_fee = {{special_case_fee}} (EUR)
+- custom_volume_discount = {{custom_volume_discount}} (%, optional; if absent, use 0)
 
 Allowed route keys (must match exactly):
 - "Zee-omgekeerd"

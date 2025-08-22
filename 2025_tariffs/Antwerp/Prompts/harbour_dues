@@ -4,6 +4,22 @@ Antwerp Harbour Dues
 Use values provided through injected variables. Only read the invoice if a required value is missing; if still missing, report it.
 Return a numbered, human-readable breakdown and the final amount. If an invoice amount is available, show the variance and note Pass/Fail at ±2%.
 
+Inputs
+------
+- vessel_type = {{vessel_type_raw}}
+- gt = {{gt}}
+- voyage_number = {{voyage_number}}
+- is_shortsea = {{is_shortsea}}
+- is_liner = {{is_liner}}
+- esi_score = {{esi_score}}
+- vessel_built_year = {{vessel_built_year}}
+- special_rate = {{special_rate}}
+- days_in_port = {{days_in_port}}
+- loaded_tons = {{loaded_tons}}
+- discharged_tons = {{discharged_tons}}
+- unit_rate_eur_per_ton = {{unit_rate}}
+- invoice_amounts (optional)
+
 Products
 ========
 1. ZVR_GT – GT-based harbour dues

@@ -9,17 +9,16 @@ If still missing, leave as “not provided”.
 Bunker Adjustment Factor (BAF) MUST be taken from the invoice and added to the final amount. If not found, use 0 and note the source as “not found in invoice”.
 
 Inputs (use or derive):
-
-length_m
-breadth_m
-max_summer_draught_m (if invoice shows draught in dm, convert to meters)
-routes (list of strings; must match the exact route keys below)
-baf_percentage (%, can be 0; must come from invoice if present)
-cancellation_fee (EUR)
-delay_fee (EUR)
-storm_pilot_fee (EUR)
-special_case_fee (EUR)
-custom_volume_discount (%, optional; default 0 if absent)
+ - length_m = {{length_m}}
+ - breadth_m = {{breadth_m}}
+ - max_summer_draught_m = {{max_summer_draught_m}} (if invoice shows draught in dm, convert to meters)
+ - routes = {{routes}} (list of strings; must match the exact route keys below)
+ - baf_percentage = {{baf_percentage}} (%, can be 0; must come from invoice if present)
+ - cancellation_fee = {{cancellation_fee}} (EUR)
+ - delay_fee = {{delay_fee}} (EUR)
+ - storm_pilot_fee = {{storm_pilot_fee}} (EUR)
+ - special_case_fee = {{special_case_fee}} (EUR)
+ - custom_volume_discount = {{custom_volume_discount}} (%, optional; default 0 if absent)
 Allowed route keys (must match exactly):
 
 "Zee-omgekeerd"
